@@ -4,7 +4,10 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy --minify",
-    "cf-typegen": "wrangler types --env-interface CloudflareBindings"
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "db:schema": "wrangler d1 execute al_ameen_db --local --file=./schema.sql",
+    "db:seed": "wrangler d1 execute al_ameen_db --local --file=./seed.sql",
+    "db:reset": "npm run db:schema && npm run db:seed"
   },
   "dependencies": {
     "hono": "^4.13.13"

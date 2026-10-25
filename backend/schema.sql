@@ -81,16 +81,32 @@ CREATE TABLE provision_customers (
 
 -- SALES TRANSACTIONS
 DROP TABLE IF EXISTS provision_sales;
+-- CREATE TABLE provision_sales (
+--                                  id TEXT PRIMARY KEY,
+--                                  branch_id TEXT NOT NULL,
+--                                  invoice_number TEXT UNIQUE NOT NULL,
+--                                  customer_id TEXT, -- Nullable for walk-in cash customers
+--                                  customer_name TEXT,
+--                                  total_amount REAL DEFAULT 0,
+--                                  amount_paid REAL DEFAULT 0,
+--                                  balance REAL DEFAULT 0,
+--                                  payment_method TEXT NOT NULL, -- 'Cash', 'POS/Card', 'Bank Transfer'
+--                                  employee_name TEXT NOT NULL,
+--                                  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+-- );
+
 CREATE TABLE provision_sales (
                                  id TEXT PRIMARY KEY,
                                  branch_id TEXT NOT NULL,
                                  invoice_number TEXT UNIQUE NOT NULL,
-                                 customer_id TEXT, -- Nullable for walk-in cash customers
+                                 customer_id TEXT,
                                  customer_name TEXT,
                                  total_amount REAL DEFAULT 0,
+                                 total_cost REAL DEFAULT 0,
+                                 profit REAL DEFAULT 0,
                                  amount_paid REAL DEFAULT 0,
                                  balance REAL DEFAULT 0,
-                                 payment_method TEXT NOT NULL, -- 'Cash', 'POS/Card', 'Bank Transfer'
+                                 payment_method TEXT NOT NULL,
                                  employee_name TEXT NOT NULL,
                                  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -119,4 +135,45 @@ CREATE TABLE provision_purchases (
                                      total_amount REAL NOT NULL,
                                      employee_name TEXT NOT NULL,
                                      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- CUSTOMER CREDIT LEDGER
+DROP TABLE IF EXISTS provision_ledger;
+CREATE TABLE provision_ledger (
+                                  id TEXT PRIMARY KEY,
+                                  branch_id TEXT NOT NULL,
+                                  customer_id TEXT NOT NULL,
+                                  customer_name TEXT NOT NULL,
+                                  transaction_type TEXT NOT NULL, -- 'Sale (Credit)' or 'Payment'
+                                  debit_amount REAL DEFAULT 0,    -- Money owed added
+                                  credit_amount REAL DEFAULT 0,   -- Money paid back
+                                  reference TEXT,                 -- Invoice number or payment method
+                                  recorded_by TEXT NOT NULL,
+                                  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- STORE EXPENSES
+DROP TABLE IF EXISTS provision_expenses;
+CREATE TABLE provision_expenses (
+                                    id TEXT PRIMARY KEY,
+                                    branch_id TEXT NOT NULL,
+                                    expense_code TEXT UNIQUE NOT NULL,
+                                    category TEXT NOT NULL,
+                                    description TEXT,
+                                    amount REAL NOT NULL,
+                                    recorded_by TEXT NOT NULL,
+                                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- EXPIRY BATCHES
+DROP TABLE IF EXISTS provision_expiry_batches;
+CREATE TABLE provision_expiry_batches (
+                                          id TEXT PRIMARY KEY,
+                                          branch_id TEXT NOT NULL,
+                                          product_id TEXT NOT NULL,
+                                          product_name TEXT NOT NULL,
+                                          batch_number TEXT,
+                                          quantity INTEGER NOT NULL,
+                                          expiry_date TEXT NOT NULL, -- 'YYYY-MM-DD'
+                                          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

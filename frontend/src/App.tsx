@@ -6,6 +6,12 @@ import Products from './pages/provision/Products';
 import POS from './pages/provision/POS';
 import Inventory from './pages/provision/Inventory';
 import Purchases from './pages/provision/Purchases';
+import Customers from './pages/provision/Customers';
+import Ledger from './pages/provision/Ledger';
+import Expenses from './pages/provision/Expenses';
+import StockTools from './pages/provision/StockTools';
+import ProvisionDashboard from './pages/provision/ProvisionDashboard';
+import ProvisionReports from './pages/provision/ProvisionReports';
 
 // Temporary Dashboard Component
 const DashboardHome = () => (
@@ -62,6 +68,15 @@ function App() {
             <Route path="/provision/pos" element={<POS />} />
             <Route path="/provision/inventory" element={<Inventory />} />
             <Route path="/provision/purchases" element={<Purchases />} />
+            <Route path="/provision/customers" element={<Customers />} />
+            <Route path="/provision/ledger" element={<Ledger />} />
+            <Route path="/provision/expenses" element={<Expenses />} />
+            <Route path="/provision/stocktools" element={<StockTools />} />
+            <Route
+              path="/provision/dashboard"
+              element={<ProvisionDashboard />}
+            />
+            <Route path="/provision/reports" element={<ProvisionReports />} />
             <Route
               path="/banking"
               element={<div className="p-4">Banking Module Loading...</div>}

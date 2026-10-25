@@ -1,32 +1,38 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Package } from 'lucide-react';
+import { Plus, Search, Package, Edit2, Power } from 'lucide-react';
 import {
   getProvisionProducts,
   createProvisionProduct,
+  updateProvisionProduct,
+  setProvisionProductStatus,
 } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 
+const emptyForm = {
+  name: '',
+  unit: '',
+  reorderLevel: 10,
+  openingStock: 0,
+  buyingPrice: 0,
+  sellingPrice: 0,
+  bulkEnabled: false,
+  bulkType: 'Carton',
+  unitsPerBulk: 12,
+  bulkPrice: 0,
+  expiryTracking: false,
+};
+
 export default function Products() {
   const { session } = useAuthStore();
+  const branchId = session?.branchId || 'BR001';
+
   const [products, setProducts] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
-  // Form State
-  const [isAdding, setIsAdding] = useState(false);
-  const [formData, setFormData] = useState({
-    name: '',
-    unit: '',
-    reorderLevel: 0,
-    openingStock: 0,
-    buyingPrice: 0,
-    sellingPrice: 0,
-    bulkEnabled: false,
-    bulkType: '',
-    unitsPerBulk: 0,
-    bulkPrice: 0,
-    expiryTracking: false,
-  });
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formData, setFormData] = useState(emptyForm);
 
   useEffect(() => {
     fetchProducts();
@@ -35,7 +41,7 @@ export default function Products() {
   const fetchProducts = async () => {
     setIsLoading(true);
     try {
-      const data = await getProvisionProducts(session?.branchId || 'BR001');
+      const data = await getProvisionProducts(branchId);
       setProducts(data);
     } catch (error) {
       console.error(error);
@@ -44,17 +50,56 @@ export default function Products() {
     }
   };
 
+  const startAdd = () => {
+    setEditingId(null);
+    setFormData(emptyForm);
+    setIsFormOpen(true);
+  };
+
+  const startEdit = (p: any) => {
+    setEditingId(p.id);
+    setFormData({
+      name: p.name,
+      unit: p.unit,
+      reorderLevel: p.reorder_level,
+      openingStock: p.stock_quantity,
+      buyingPrice: p.buying_price,
+      sellingPrice: p.selling_price,
+      bulkEnabled: Boolean(p.bulk_enabled),
+      bulkType: p.bulk_type || 'Carton',
+      unitsPerBulk: p.units_per_bulk || 12,
+      bulkPrice: p.bulk_price || 0,
+      expiryTracking: Boolean(p.expiry_tracking),
+    });
+    setIsFormOpen(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await createProvisionProduct({
-        ...formData,
-        branchId: session?.branchId,
-      });
-      setIsAdding(false);
-      fetchProducts(); // Refresh list
-    } catch (error) {
-      alert('Failed to save product');
+      if (editingId) {
+        await updateProvisionProduct(editingId, formData);
+      } else {
+        await createProvisionProduct({ ...formData, branchId });
+      }
+      setIsFormOpen(false);
+      setEditingId(null);
+      setFormData(emptyForm);
+      fetchProducts();
+    } catch (error: any) {
+      alert(error.message || 'Failed to save product');
+    }
+  };
+
+  const handleToggleStatus = async (p: any) => {
+    const newStatus = p.status === 'Active' ? 'Inactive' : 'Active';
+    if (!confirm(`Change "${p.name}" status to ${newStatus}?`)) return;
+    try {
+      await setProvisionProductStatus(p.id, newStatus);
+      fetchProducts();
+    } catch (error: any) {
+      alert(error.message || 'Could not update status');
     }
   };
 
@@ -72,15 +117,15 @@ export default function Products() {
             Products Master
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            Manage your provision store inventory catalog.
+            Manage your provision store catalog, pricing, and bulk tiers.
           </p>
         </div>
         <button
-          onClick={() => setIsAdding(!isAdding)}
-          className="flex items-center gap-2 bg-brand-provision text-white px-4 py-2.5 rounded-xl font-semibold hover:bg-green-700 transition-all shadow-sm active:scale-95"
+          onClick={() => (isFormOpen ? setIsFormOpen(false) : startAdd())}
+          className="flex items-center gap-2 bg-brand-provision text-white px-4 py-2.5 rounded-xl font-semibold hover:bg-green-700 transition-all shadow-sm"
         >
-          {isAdding ? (
-            'Cancel'
+          {isFormOpen ? (
+            'Close Form'
           ) : (
             <>
               <Plus size={18} /> Add New Product
@@ -89,13 +134,13 @@ export default function Products() {
         </button>
       </div>
 
-      {isAdding && (
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+      {isFormOpen && (
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 border-t-4 border-t-brand-provision">
           <h3 className="text-lg font-bold text-gray-800 mb-4">
-            Add New Product
+            {editingId ? 'Edit Product' : 'Add New Product'}
           </h3>
-          <form onSubmit={handleSave} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <form onSubmit={handleSave} className="space-y-5">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
                   Product Name *
@@ -103,12 +148,12 @@ export default function Products() {
                 <input
                   required
                   type="text"
-                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-brand-provision/50 outline-none transition-all"
+                  placeholder="e.g. Milo 400g"
                   value={formData.name}
                   onChange={(e) =>
                     setFormData({ ...formData, name: e.target.value })
                   }
-                  placeholder="e.g. Milo 400g"
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-brand-provision/50 outline-none"
                 />
               </div>
               <div>
@@ -118,81 +163,224 @@ export default function Products() {
                 <input
                   required
                   type="text"
-                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-brand-provision/50 outline-none transition-all"
+                  placeholder="e.g. Tin, Bottle, Sachet"
                   value={formData.unit}
                   onChange={(e) =>
                     setFormData({ ...formData, unit: e.target.value })
                   }
-                  placeholder="e.g. Tin, Bottle"
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-brand-provision/50 outline-none"
                 />
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                  Opening Stock
+                  Reorder Level (Units) *
+                </label>
+                <input
+                  required
+                  type="number"
+                  min="0"
+                  value={formData.reorderLevel}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      reorderLevel: parseInt(e.target.value) || 0,
+                    })
+                  }
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-brand-provision/50 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                  Opening Stock {editingId && '(Locked on Edit)'}
                 </label>
                 <input
                   type="number"
                   min="0"
-                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-brand-provision/50 outline-none transition-all"
+                  disabled={Boolean(editingId)}
                   value={formData.openingStock}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
-                      openingStock: parseInt(e.target.value),
+                      openingStock: parseInt(e.target.value) || 0,
                     })
                   }
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg disabled:opacity-50 outline-none"
                 />
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                  Buying Price (₦) *
+                  Buying Price (Per Unit ₦) *
                 </label>
                 <input
                   required
                   type="number"
                   min="0"
-                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-brand-provision/50 outline-none transition-all"
+                  step="0.01"
                   value={formData.buyingPrice}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
-                      buyingPrice: parseFloat(e.target.value),
+                      buyingPrice: parseFloat(e.target.value) || 0,
                     })
                   }
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-brand-provision/50 outline-none"
                 />
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                  Selling Price (₦) *
+                  Selling Price (Per Unit ₦) *
                 </label>
                 <input
                   required
                   type="number"
                   min="0"
-                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-brand-provision/50 outline-none transition-all"
+                  step="0.01"
                   value={formData.sellingPrice}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
-                      sellingPrice: parseFloat(e.target.value),
+                      sellingPrice: parseFloat(e.target.value) || 0,
                     })
                   }
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-brand-provision/50 outline-none"
                 />
               </div>
             </div>
 
-            <div className="pt-2">
+            {/* Bulk Pack Selling Tier */}
+            <div className="p-4 border border-dashed border-gray-300 rounded-xl bg-gray-50/50 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-bold text-brand-provision">
+                    Bulk Pack Selling
+                  </h4>
+                  <p className="text-xs text-gray-500">
+                    Can this product also be sold as a pack, carton, roll or
+                    dozen?
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFormData({ ...formData, bulkEnabled: true })
+                    }
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                      formData.bulkEnabled
+                        ? 'bg-green-100 border-brand-provision text-brand-provision'
+                        : 'bg-white border-gray-200 text-gray-600'
+                    }`}
+                  >
+                    YES
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFormData({ ...formData, bulkEnabled: false })
+                    }
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                      !formData.bulkEnabled
+                        ? 'bg-red-100 border-red-500 text-red-600'
+                        : 'bg-white border-gray-200 text-gray-600'
+                    }`}
+                  >
+                    NO
+                  </button>
+                </div>
+              </div>
+
+              {formData.bulkEnabled && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-gray-200">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                      Bulk Type *
+                    </label>
+                    <select
+                      value={formData.bulkType}
+                      onChange={(e) =>
+                        setFormData({ ...formData, bulkType: e.target.value })
+                      }
+                      className="w-full p-2.5 bg-white border border-gray-200 rounded-lg outline-none"
+                    >
+                      <option value="Pack">Pack</option>
+                      <option value="Carton">Carton</option>
+                      <option value="Roll">Roll</option>
+                      <option value="Dozen">Dozen</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                      Units per {formData.bulkType} *
+                    </label>
+                    <input
+                      required
+                      type="number"
+                      min="2"
+                      value={formData.unitsPerBulk}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          unitsPerBulk: parseInt(e.target.value) || 2,
+                        })
+                      }
+                      className="w-full p-2.5 bg-white border border-gray-200 rounded-lg outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                      Selling Price (Per {formData.bulkType} ₦) *
+                    </label>
+                    <input
+                      required
+                      type="number"
+                      min="1"
+                      step="0.01"
+                      value={formData.bulkPrice}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          bulkPrice: parseFloat(e.target.value) || 0,
+                        })
+                      }
+                      className="w-full p-2.5 bg-white border border-gray-200 rounded-lg outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <label className="flex items-center gap-2 text-sm text-gray-700 font-medium cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.expiryTracking}
+                onChange={(e) =>
+                  setFormData({ ...formData, expiryTracking: e.target.checked })
+                }
+                className="w-4 h-4 accent-brand-provision rounded"
+              />
+              Track expiry batches for this product
+            </label>
+
+            <div className="flex gap-3 pt-2">
               <button
                 type="submit"
-                className="bg-gray-900 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-gray-800 transition-colors"
+                className="bg-brand-provision text-white px-6 py-2.5 rounded-lg font-bold hover:bg-green-700 transition-colors"
               >
-                Save Product
+                {editingId ? 'Update Product' : 'Save Product'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsFormOpen(false)}
+                className="bg-gray-100 text-gray-700 px-6 py-2.5 rounded-lg font-bold hover:bg-gray-200 transition-colors"
+              >
+                Cancel
               </button>
             </div>
           </form>
         </div>
       )}
 
+      {/* Products Table */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
         <div className="p-4 border-b border-gray-100 bg-gray-50/50">
           <div className="relative max-w-md">
@@ -205,7 +393,7 @@ export default function Products() {
               placeholder="Search by name or code..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-provision/50 transition-shadow"
+              className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-provision/50"
             />
           </div>
         </div>
@@ -219,14 +407,16 @@ export default function Products() {
                 <th className="px-6 py-4">Stock</th>
                 <th className="px-6 py-4">Buy (₦)</th>
                 <th className="px-6 py-4">Sell (₦)</th>
+                <th className="px-6 py-4">Bulk Tier</th>
                 <th className="px-6 py-4">Status</th>
+                <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {isLoading ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={8}
                     className="px-6 py-8 text-center text-gray-400"
                   >
                     Loading products...
@@ -235,7 +425,7 @@ export default function Products() {
               ) : filteredProducts.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={8}
                     className="px-6 py-12 text-center text-gray-400"
                   >
                     <Package className="mx-auto h-12 w-12 text-gray-200 mb-3" />
@@ -259,7 +449,11 @@ export default function Products() {
                     </td>
                     <td className="px-6 py-4">
                       <span
-                        className={`px-2.5 py-1 rounded-full text-xs font-bold ${p.stock_quantity <= p.reorder_level ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}
+                        className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                          p.stock_quantity <= p.reorder_level
+                            ? 'bg-red-100 text-red-700'
+                            : 'bg-green-100 text-green-700'
+                        }`}
                       >
                         {p.stock_quantity}
                       </span>
@@ -267,13 +461,43 @@ export default function Products() {
                     <td className="px-6 py-4">
                       ₦{p.buying_price.toLocaleString()}
                     </td>
-                    <td className="px-6 py-4 font-medium text-brand-provision">
+                    <td className="px-6 py-4 font-bold text-brand-provision">
                       ₦{p.selling_price.toLocaleString()}
                     </td>
+                    <td className="px-6 py-4 text-xs text-gray-600">
+                      {p.bulk_enabled
+                        ? `${p.bulk_type} · ${p.units_per_bulk} × ₦${Number(p.bulk_price).toLocaleString()}`
+                        : '—'}
+                    </td>
                     <td className="px-6 py-4">
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-gray-100 text-gray-600">
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                          p.status === 'Active'
+                            ? 'bg-green-50 text-green-700'
+                            : 'bg-gray-100 text-gray-500'
+                        }`}
+                      >
                         {p.status}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 text-right space-x-2 whitespace-nowrap">
+                      <button
+                        onClick={() => startEdit(p)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-bold"
+                      >
+                        <Edit2 size={12} /> Edit
+                      </button>
+                      <button
+                        onClick={() => handleToggleStatus(p)}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold ${
+                          p.status === 'Active'
+                            ? 'bg-red-50 hover:bg-red-100 text-red-600'
+                            : 'bg-green-50 hover:bg-green-100 text-green-700'
+                        }`}
+                      >
+                        <Power size={12} />{' '}
+                        {p.status === 'Active' ? 'Deactivate' : 'Activate'}
+                      </button>
                     </td>
                   </tr>
                 ))
