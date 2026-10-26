@@ -12,6 +12,13 @@ import Expenses from './pages/provision/Expenses';
 import StockTools from './pages/provision/StockTools';
 import ProvisionDashboard from './pages/provision/ProvisionDashboard';
 import ProvisionReports from './pages/provision/ProvisionReports';
+import CashFloat from './pages/banking/CashFloat';
+import Transactions from './pages/banking/Transactions';
+import BankingSettings from './pages/banking/Settings';
+import BankingDashboard from './pages/banking/BankingDashboard';
+import BankingCustomers from './pages/banking/BankingCustomers';
+import BankingExpenses from './pages/banking/BankingExpenses';
+import BankingReports from './pages/banking/BankingReports';
 
 // Temporary Dashboard Component
 const DashboardHome = () => (
@@ -77,10 +84,22 @@ function App() {
               element={<ProvisionDashboard />}
             />
             <Route path="/provision/reports" element={<ProvisionReports />} />
+            {/*<Route*/}
+            {/*  path="/banking"*/}
+            {/*  element={<div className="p-4">Banking Module Loading...</div>}*/}
+            {/*/>*/}
             <Route
               path="/banking"
-              element={<div className="p-4">Banking Module Loading...</div>}
+              element={<Navigate to="/banking/transactions" replace />}
             />
+            <Route path="/banking/transactions" element={<Transactions />} />
+            <Route path="/banking/cashfloat" element={<CashFloat />} />
+            <Route path="/banking/settings" element={<BankingSettings />} />
+            <Route path="/banking/dashboard" element={<BankingDashboard />} />
+            <Route path="/banking/customers" element={<BankingCustomers />} />
+            <Route path="/banking/expenses" element={<BankingExpenses />} />
+            <Route path="/banking/reports" element={<BankingReports />} />
+
             <Route
               path="/laundry"
               element={<div className="p-4">Laundry Module Loading...</div>}

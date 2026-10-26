@@ -14,6 +14,12 @@ DELETE FROM provision_purchases;
 DELETE FROM provision_ledger;
 DELETE FROM provision_expenses;
 DELETE FROM provision_expiry_batches;
+DELETE FROM banking_settings;
+DELETE FROM banking_providers;
+DELETE FROM banking_float;
+DELETE FROM banking_day_close;
+DELETE FROM banking_transactions;
+DELETE FROM banking_expenses;
 
 -- 1. Branches
 INSERT INTO branches (id, name, business_type, status) VALUES
@@ -94,3 +100,48 @@ INSERT INTO provision_expiry_batches (id, branch_id, product_id, product_name, b
                                                                                                                         ('BAT-001', 'BR001', 'PRD-004', 'Peak Full Cream Milk 160g', 'PK-2026-A', 12, date('now', '-5 days')),
                                                                                                                         ('BAT-002', 'BR001', 'PRD-001', 'Milo 400g', 'ML-2026-B', 20, date('now', '+14 days')),
                                                                                                                         ('BAT-003', 'BR001', 'PRD-001', 'Milo 400g', 'ML-2027-C', 25, date('now', '+180 days'));
+
+-- ==========================================
+-- POS AGENT BANKING SEED DATA (BR002)
+-- ==========================================
+
+-- 11. Banking Default Charges
+INSERT INTO banking_settings (id, branch_id, transaction_type, default_charge) VALUES
+                                                                                   ('BSET-1', 'BR002', 'Deposit', 100),
+                                                                                   ('BSET-2', 'BR002', 'Withdrawal', 100),
+                                                                                   ('BSET-3', 'BR002', 'Transfer', 50),
+                                                                                   ('BSET-4', 'BR002', 'Airtime', 0),
+                                                                                   ('BSET-5', 'BR002', 'Data', 0),
+                                                                                   ('BSET-6', 'BR002', 'Bill Payment', 100);
+
+-- 12. Banking Providers
+INSERT INTO banking_providers (id, branch_id, provider_name) VALUES
+                                                                 ('BPRV-1', 'BR002', 'Opay'),
+                                                                 ('BPRV-2', 'BR002', 'Moniepoint'),
+                                                                 ('BPRV-3', 'BR002', 'PalmPay'),
+                                                                 ('BPRV-4', 'BR002', 'FirstMonie'),
+                                                                 ('BPRV-5', 'BR002', 'Baxi'),
+                                                                 ('BPRV-6', 'BR002', 'Others');
+
+-- 13. Banking Float (Yesterday + Today Opened)
+INSERT INTO banking_float (id, branch_id, tx_date, tx_time, opening_cash, opening_float, opened_by) VALUES
+                                                                                                        ('BFLT-1', 'BR002', date('now', '-1 day'), '08:05:12', 150000, 250000, 'Al Ameen (Owner)'),
+                                                                                                        ('BFLT-2', 'BR002', date('now'), '08:00:00', 200000, 350000, 'Al Ameen (Owner)');
+
+-- 14. Banking Day Close (Yesterday Closed)
+INSERT INTO banking_day_close (id, branch_id, tx_date, tx_time, expected_cash, counted_cash, variance, expected_float, notes, closed_by) VALUES
+    ('BCLS-1', 'BR002', date('now', '-1 day'), '20:15:00', 185000, 185000, 0, 218000, 'Balanced perfectly', 'Al Ameen (Owner)');
+
+-- 15. Banking Transactions (Today's activity)
+INSERT INTO banking_transactions (
+    id, branch_id, transaction_code, tx_date, tx_time, customer_name, customer_phone,
+    type, provider, amount, charge, charge_source, cash_delta, float_delta, status, notes, recorded_by
+) VALUES
+      ('BTX-1', 'BR002', 'TRX-1001', date('now'), '09:15:22', 'Ibrahim Lawal', '0803 444 1122', 'Withdrawal', 'Moniepoint', 20000, 200, 'Deducted from float sent', -19800, 20000, 'Successful', '', 'Al Ameen (Owner)'),
+      ('BTX-2', 'BR002', 'TRX-1002', date('now'), '10:02:45', 'Fatima Sani', '0806 222 9988', 'Deposit', 'Opay', 50000, 300, 'Cash on top', 50300, -50000, 'Successful', '', 'Al Ameen (Owner)'),
+      ('BTX-3', 'BR002', 'TRX-1003', date('now'), '11:30:10', 'Ibrahim Lawal', '0803 444 1122', 'Transfer', 'PalmPay', 15000, 100, 'Cash on top', 100, -15000, 'Successful', '', 'Al Ameen (Owner)'),
+      ('BTX-4', 'BR002', 'TRX-1004', date('now'), '12:10:05', 'Usman Garba', '0701 888 7766', 'Withdrawal', 'Moniepoint', 10000, 100, 'Deducted from float sent', -9900, 10000, 'Failed', 'Network timeout on POS', 'Al Ameen (Owner)');
+
+-- 16. Banking Expenses (Today)
+INSERT INTO banking_expenses (id, branch_id, expense_code, tx_date, tx_time, category, description, amount, recorded_by) VALUES
+    ('BEXP-1', 'BR002', 'EXP-20001', date('now'), '11:00:00', 'Airtime/Data (business)', 'POS terminal SIM data bundle', 1500, 'Al Ameen (Owner)');

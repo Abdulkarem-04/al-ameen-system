@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import provisionRoutes from './provision';
+import bankingRoutes from './banking';
 
 // 1. Tell TypeScript about our Cloudflare D1 Database binding
 type Bindings = {
@@ -88,5 +89,6 @@ app.post('/api/login', async (c) => {
 });
 
 app.route('/api/provision', provisionRoutes);
+app.route('/api/banking', bankingRoutes);
 
 export default app;

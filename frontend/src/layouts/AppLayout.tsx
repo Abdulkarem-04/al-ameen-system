@@ -181,18 +181,89 @@ export default function AppLayout() {
             )}
           </div>
 
-          <Link
-            to="/banking"
-            onClick={() => setIsMobileMenuOpen(false)}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-              isActive('/banking')
-                ? 'bg-blue-50 text-brand-banking font-bold'
-                : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-            }`}
-          >
-            <Landmark size={18} />
-            POS Banking
-          </Link>
+          {/*<Link*/}
+          {/*  to="/banking"*/}
+          {/*  onClick={() => setIsMobileMenuOpen(false)}*/}
+          {/*  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${*/}
+          {/*    isActive('/banking')*/}
+          {/*      ? 'bg-blue-50 text-brand-banking font-bold'*/}
+          {/*      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'*/}
+          {/*  }`}*/}
+          {/*>*/}
+          {/*  <Landmark size={18} />*/}
+          {/*  POS Banking*/}
+          {/*</Link>*/}
+
+          <div className="space-y-1">
+            <Link
+              to="/banking/transactions"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                isActive('/banking')
+                  ? 'bg-blue-50 text-brand-banking font-bold'
+                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Landmark size={18} />
+                POS Banking
+              </div>
+            </Link>
+
+            {isActive('/banking') && (
+              <div className="ml-9 space-y-1 mt-1 border-l-2 border-blue-100 pl-2">
+                <Link
+                  to="/banking/dashboard"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={`block px-3 py-2 rounded-md text-sm transition-colors ${isActive('/banking/dashboard') ? 'bg-blue-100/50 text-blue-800 font-semibold' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}
+                >
+                  Overview
+                </Link>
+                <Link
+                  to="/banking/transactions"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={`block px-3 py-2 rounded-md text-sm transition-colors ${isActive('/banking/transactions') ? 'bg-blue-100/50 text-blue-800 font-semibold' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}
+                >
+                  Transactions
+                </Link>
+                <Link
+                  to="/banking/cashfloat"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={`block px-3 py-2 rounded-md text-sm transition-colors ${isActive('/banking/cashfloat') ? 'bg-blue-100/50 text-blue-800 font-semibold' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}
+                >
+                  Cash & Float
+                </Link>
+                <Link
+                  to="/banking/customers"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={`block px-3 py-2 rounded-md text-sm transition-colors ${isActive('/banking/customers') ? 'bg-blue-100/50 text-blue-800 font-semibold' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}
+                >
+                  Customers
+                </Link>
+                <Link
+                  to="/banking/expenses"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={`block px-3 py-2 rounded-md text-sm transition-colors ${isActive('/banking/expenses') ? 'bg-blue-100/50 text-blue-800 font-semibold' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}
+                >
+                  Expenses
+                </Link>
+                <Link
+                  to="/banking/settings"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={`block px-3 py-2 rounded-md text-sm transition-colors ${isActive('/banking/settings') ? 'bg-blue-100/50 text-blue-800 font-semibold' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}
+                >
+                  Settings
+                </Link>
+                <Link
+                  to="/banking/reports"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={`block px-3 py-2 rounded-md text-sm transition-colors ${isActive('/banking/reports') ? 'bg-blue-100/50 text-blue-800 font-semibold' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}
+                >
+                  Reports
+                </Link>
+              </div>
+            )}
+          </div>
 
           <Link
             to="/laundry"

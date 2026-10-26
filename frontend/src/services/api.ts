@@ -244,3 +244,170 @@ export const getProvisionReport = async (
   if (!data.success) throw new Error(data.error);
   return data.data;
 };
+
+
+// ==========================================
+// POS AGENT BANKING API CALLS
+// ==========================================
+
+export const getBankingSettings = async (branchId: string) => {
+  const res = await fetch(`${API_BASE}/banking/settings?branchId=${branchId}`);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error);
+  return data.data;
+};
+
+export const updateBankingChargeDefault = async (branchId: string, transactionType: string, defaultCharge: number) => {
+  const res = await fetch(`${API_BASE}/banking/settings/charge`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ branchId, transactionType, defaultCharge }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error);
+  return data.data;
+};
+
+export const addBankingProvider = async (branchId: string, providerName: string) => {
+  const res = await fetch(`${API_BASE}/banking/settings/providers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ branchId, providerName }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error);
+  return data.data;
+};
+
+export const deleteBankingProvider = async (id: string) => {
+  const res = await fetch(`${API_BASE}/banking/settings/providers/${id}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error);
+  return data.data;
+};
+
+export const getBankingFloatData = async (branchId: string) => {
+  const res = await fetch(`${API_BASE}/banking/float?branchId=${branchId}`);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error);
+  return data.data;
+};
+
+export const openBankingDay = async (payload: { branchId: string; openingCash: number; openingFloat: number; employeeName: string }) => {
+  const res = await fetch(`${API_BASE}/banking/float/open`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error);
+  return data.data;
+};
+
+export const closeBankingDay = async (payload: { branchId: string; countedCash: number; notes: string; employeeName: string }) => {
+  const res = await fetch(`${API_BASE}/banking/float/close`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error);
+  return data.data;
+};
+
+export const reopenBankingDay = async (branchId: string) => {
+  const res = await fetch(`${API_BASE}/banking/float/reopen`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ branchId }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error);
+  return data.data;
+};
+
+export const getBankingTransactions = async (branchId: string, date?: string) => {
+  let url = `${API_BASE}/banking/transactions?branchId=${branchId}`;
+  if (date) url += `&date=${date}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error);
+  return data.data;
+};
+
+export const createBankingTransaction = async (txData: any) => {
+  const res = await fetch(`${API_BASE}/banking/transactions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(txData),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error);
+  return data.data;
+};
+
+export const updateBankingTransactionStatus = async (id: string, branchId: string, status: string, notes?: string) => {
+  const res = await fetch(`${API_BASE}/banking/transactions/${id}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ branchId, status, notes }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error);
+  return data.data;
+};
+
+export const deleteBankingTransaction = async (id: string) => {
+  const res = await fetch(`${API_BASE}/banking/transactions/${id}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error);
+  return data.data;
+};
+
+export const getBankingCustomers = async (branchId: string) => {
+  const res = await fetch(`${API_BASE}/banking/customers?branchId=${branchId}`);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error);
+  return data.data;
+};
+
+export const getBankingExpenses = async (branchId: string) => {
+  const res = await fetch(`${API_BASE}/banking/expenses?branchId=${branchId}`);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error);
+  return data.data;
+};
+
+export const createBankingExpense = async (expenseData: any) => {
+  const res = await fetch(`${API_BASE}/banking/expenses`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(expenseData),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error);
+  return data.data;
+};
+
+export const deleteBankingExpense = async (id: string) => {
+  const res = await fetch(`${API_BASE}/banking/expenses/${id}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error);
+  return data.data;
+};
+
+export const getBankingDashboard = async (branchId: string) => {
+  const res = await fetch(`${API_BASE}/banking/dashboard?branchId=${branchId}`);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error);
+  return data.data;
+};
+
+export const getBankingReport = async (branchId: string, startDate: string, endDate: string) => {
+  const res = await fetch(
+    `${API_BASE}/banking/reports?branchId=${branchId}&startDate=${startDate}&endDate=${endDate}`
+  );
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error);
+  return data.data;
+};

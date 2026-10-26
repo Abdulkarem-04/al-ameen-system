@@ -177,3 +177,85 @@ CREATE TABLE provision_expiry_batches (
                                           expiry_date TEXT NOT NULL, -- 'YYYY-MM-DD'
                                           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ==========================================
+-- POS AGENT BANKING TABLES (BR002)
+-- ==========================================
+
+DROP TABLE IF EXISTS banking_settings;
+CREATE TABLE banking_settings (
+                                  id TEXT PRIMARY KEY,
+                                  branch_id TEXT NOT NULL,
+                                  transaction_type TEXT NOT NULL,
+                                  default_charge REAL DEFAULT 0
+);
+
+DROP TABLE IF EXISTS banking_providers;
+CREATE TABLE banking_providers (
+                                   id TEXT PRIMARY KEY,
+                                   branch_id TEXT NOT NULL,
+                                   provider_name TEXT NOT NULL
+);
+
+DROP TABLE IF EXISTS banking_float;
+CREATE TABLE banking_float (
+                               id TEXT PRIMARY KEY,
+                               branch_id TEXT NOT NULL,
+                               tx_date TEXT NOT NULL, -- 'YYYY-MM-DD'
+                               tx_time TEXT NOT NULL, -- 'HH:MM:SS'
+                               opening_cash REAL NOT NULL,
+                               opening_float REAL NOT NULL,
+                               opened_by TEXT NOT NULL,
+                               created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS banking_day_close;
+CREATE TABLE banking_day_close (
+                                   id TEXT PRIMARY KEY,
+                                   branch_id TEXT NOT NULL,
+                                   tx_date TEXT NOT NULL,
+                                   tx_time TEXT NOT NULL,
+                                   expected_cash REAL NOT NULL,
+                                   counted_cash REAL NOT NULL,
+                                   variance REAL NOT NULL,
+                                   expected_float REAL NOT NULL,
+                                   notes TEXT,
+                                   closed_by TEXT NOT NULL,
+                                   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS banking_transactions;
+CREATE TABLE banking_transactions (
+                                      id TEXT PRIMARY KEY,
+                                      branch_id TEXT NOT NULL,
+                                      transaction_code TEXT UNIQUE NOT NULL,
+                                      tx_date TEXT NOT NULL,
+                                      tx_time TEXT NOT NULL,
+                                      customer_name TEXT,
+                                      customer_phone TEXT,
+                                      type TEXT NOT NULL, -- 'Deposit', 'Withdrawal', 'Transfer', 'Airtime', 'Data', 'Bill Payment'
+                                      provider TEXT NOT NULL,
+                                      amount REAL NOT NULL,
+                                      charge REAL NOT NULL,
+                                      charge_source TEXT, -- 'Deducted from float sent' | 'Cash on top'
+                                      cash_delta REAL NOT NULL,
+                                      float_delta REAL NOT NULL,
+                                      status TEXT DEFAULT 'Successful', -- 'Successful', 'Failed', 'Reversed', 'Pending'
+                                      notes TEXT,
+                                      recorded_by TEXT NOT NULL,
+                                      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS banking_expenses;
+CREATE TABLE banking_expenses (
+                                  id TEXT PRIMARY KEY,
+                                  branch_id TEXT NOT NULL,
+                                  expense_code TEXT UNIQUE NOT NULL,
+                                  tx_date TEXT NOT NULL,
+                                  tx_time TEXT NOT NULL,
+                                  category TEXT NOT NULL,
+                                  description TEXT,
+                                  amount REAL NOT NULL,
+                                  recorded_by TEXT NOT NULL,
+                                  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
