@@ -1,0 +1,9 @@
+{
+  "name": "AmanaHQ — Smart Retail, POS & Laundry ERP",
+  "short_name": "AmanaHQ",
+  "description": "Multi-tenant POS, Inventory, Agency Banking and Laundry Management System",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090D16",
+  "theme_color": "#059669"
+}

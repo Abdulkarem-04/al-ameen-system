@@ -1,413 +1,571 @@
-const API_BASE = 'http://localhost:8787/api';
+import { useAuthStore } from '../store/authStore';
 
-export const loginApi = async (code: string, pin: string) => {
-  const response = await fetch(`${API_BASE}/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code, pin }),
-  });
+// const API_BASE = 'http://localhost:8787/api';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787/api';
+const CACHE_PREFIX = 'amanahq_cache_';
+const OUTBOX_KEY = 'amanahq_offline_outbox';
 
-  const data = await response.json();
+export interface OutboxItem {
+  id: string;
+  endpoint: string;
+  method: string;
+  payload: any;
+  createdAt: string;
+  label: string;
+}
 
-  if (!data.success) {
-    throw new Error(data.error || 'Something went wrong');
+// Always reads the active user's isolated tenantId from Zustand
+function getActiveTenantId(): string {
+  try {
+    return useAuthStore.getState().session?.tenantId || 'TENANT-001';
+  } catch {
+    return 'TENANT-001';
+  }
+}
+
+// Automatically maps each Tenant to its own isolated module partition
+function getScopedBranchId(path: string): string | null {
+  const tId = getActiveTenantId();
+  if (path.startsWith('/provision'))
+    return tId === 'TENANT-001' ? 'BR001' : `${tId}_PROV`;
+  if (path.startsWith('/banking'))
+    return tId === 'TENANT-001' ? 'BR002' : `${tId}_BANK`;
+  if (path.startsWith('/laundry'))
+    return tId === 'TENANT-001' ? 'BR003' : `${tId}_LAUN`;
+  return null;
+}
+
+function withScopedBranchUrl(path: string): string {
+  const scopedBranch = getScopedBranchId(path);
+  if (!scopedBranch) return path;
+  const [basePath, queryStr] = path.split('?');
+  const params = new URLSearchParams(queryStr || '');
+  params.set('branchId', scopedBranch);
+  return `${basePath}?${params.toString()}`;
+}
+
+export const getOfflineOutbox = (): OutboxItem[] => {
+  try {
+    return JSON.parse(localStorage.getItem(OUTBOX_KEY) || '[]');
+  } catch {
+    return [];
+  }
+};
+
+const addToOfflineOutbox = (
+  endpoint: string,
+  method: string,
+  payload: any,
+  label: string,
+) => {
+  const queue = getOfflineOutbox();
+  const scopedBranch = getScopedBranchId(endpoint);
+  const item: OutboxItem = {
+    id: `OFF-${Date.now().toString(36).toUpperCase()}`,
+    endpoint,
+    method,
+    payload: {
+      ...payload,
+      tenantId: getActiveTenantId(),
+      ...(scopedBranch ? { branchId: scopedBranch } : {}),
+    },
+    createdAt: new Date().toISOString(),
+    label,
+  };
+  queue.push(item);
+  localStorage.setItem(OUTBOX_KEY, JSON.stringify(queue));
+  window.dispatchEvent(new Event('amanahq-outbox-changed'));
+  return item;
+};
+
+export const syncOfflineOutbox = async (): Promise<{
+  synced: number;
+  remaining: number;
+}> => {
+  const queue = getOfflineOutbox();
+  if (queue.length === 0) return { synced: 0, remaining: 0 };
+
+  const remaining: OutboxItem[] = [];
+  let synced = 0;
+
+  for (const item of queue) {
+    try {
+      const res = await fetch(`${API_BASE}${item.endpoint}`, {
+        method: item.method,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Tenant-Id': item.payload?.tenantId || getActiveTenantId(),
+        },
+        body: JSON.stringify(item.payload),
+      });
+      const data = await res.json();
+      if (data.success) {
+        synced++;
+      } else {
+        remaining.push(item);
+      }
+    } catch {
+      remaining.push(item);
+    }
   }
 
-  return data.data; // Returns { token, session }
+  localStorage.setItem(OUTBOX_KEY, JSON.stringify(remaining));
+  window.dispatchEvent(new Event('amanahq-outbox-changed'));
+  return { synced, remaining: remaining.length };
 };
 
-export const getProvisionProducts = async (branchId: string) => {
-  const response = await fetch(
-    `${API_BASE}/provision/products?branchId=${branchId}`,
-  );
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+async function parseJsonResponse(response: Response) {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Server error (${response.status}): ${text.slice(0, 120)}`);
+  }
+}
 
-export const createProvisionProduct = async (productData: any) => {
-  const response = await fetch(`${API_BASE}/provision/products`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(productData),
+// Tenant-isolated cached GET helper
+async function cachedGet(rawPath: string) {
+  const tenantId = getActiveTenantId();
+  const path = withScopedBranchUrl(rawPath);
+  const cacheKey = `${CACHE_PREFIX}${tenantId}_${path}`;
+  try {
+    const response = await fetch(`${API_BASE}${path}`, {
+      headers: { 'X-Tenant-Id': tenantId },
+    });
+    const data = await parseJsonResponse(response);
+    if (!data.success) throw new Error(data.error || 'Request failed');
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify(data.data));
+    } catch {}
+    return data.data;
+  } catch (err: any) {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+    throw err;
+  }
+}
+
+// Tenant-isolated mutation helper
+async function apiMutate(rawPath: string, method: string, body?: any) {
+  const tenantId = getActiveTenantId();
+  const scopedBranch = getScopedBranchId(rawPath);
+  const path = withScopedBranchUrl(rawPath);
+  const finalBody = body
+    ? {
+        ...body,
+        tenantId,
+        ...(scopedBranch ? { branchId: scopedBranch } : {}),
+      }
+    : undefined;
+
+  const response = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Tenant-Id': tenantId,
+    },
+    body: finalBody ? JSON.stringify(finalBody) : undefined,
   });
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
+  const data = await parseJsonResponse(response);
+  if (!data.success) throw new Error(data.error || 'Operation failed');
   return data.data;
-};
+}
+
+// ============================================================================
+// 2. CORE AUTH, BRANDING, RBAC, AUDIT & SUPERADMIN API
+// ============================================================================
+export const loginApi = (code: string, pin: string) =>
+  apiMutate('/login', 'POST', { code, pin });
+
+export const recoverOwnerPin = (
+  code: string,
+  recoveryKey: string,
+  newPin: string,
+) => apiMutate('/recover-pin', 'POST', { code, recoveryKey, newPin });
+
+export const getPublicBranding = () => cachedGet('/public-branding');
+export const getHomeSummary = () => cachedGet('/home-summary');
+
+export const getEmployees = () => cachedGet('/employees');
+export const createEmployee = (payload: any) =>
+  apiMutate('/employees', 'POST', payload);
+export const updateEmployee = (id: string, payload: any) =>
+  apiMutate(`/employees/${id}`, 'PUT', payload);
+export const resetEmployeePin = (
+  id: string,
+  newPin: string,
+  actorName?: string,
+) => apiMutate(`/employees/${id}/pin`, 'PATCH', { newPin, actorName });
+export const setEmployeeStatus = (
+  id: string,
+  status: string,
+  actorName?: string,
+) => apiMutate(`/employees/${id}/status`, 'PATCH', { status, actorName });
+export const migratePinsToHash = () =>
+  apiMutate('/employees/migrate-pins', 'POST');
+
+export const getPermissionMatrix = () => cachedGet('/permissions/matrix');
+export const setPermissionCell = (payload: {
+  employeeId: string;
+  pageKey: string;
+  action: 'view' | 'add' | 'edit' | 'delete';
+  value: boolean;
+  actorName?: string;
+}) => apiMutate('/permissions/cell', 'PUT', payload);
+export const resetEmployeePermissions = (
+  employeeId: string,
+  actorName?: string,
+) => apiMutate('/permissions/reset', 'POST', { employeeId, actorName });
+
+export const getAuditLogs = () => cachedGet('/audit-logs');
+
+export const getShopSettings = () => cachedGet('/settings');
+export const saveShopSettings = (payload: any) =>
+  apiMutate('/settings', 'PUT', payload);
+export const saveShopLogo = (logoDataUrl: string, actorName?: string) =>
+  apiMutate('/settings/logo', 'POST', { logoDataUrl, actorName });
+
+export const getSuperAdminTenants = () => cachedGet('/superadmin/tenants');
+export const createSuperAdminTenant = (payload: any) =>
+  apiMutate('/superadmin/tenants', 'POST', payload);
+export const updateSuperAdminTenant = (id: string, payload: any) =>
+  apiMutate(`/superadmin/tenants/${id}`, 'PATCH', payload);
+export const updateSuperAdminCredentials = (payload: {
+  newCode: string;
+  newName: string;
+  newPin?: string;
+}) => apiMutate('/superadmin/credentials', 'PUT', payload);
+
+// ============================================================================
+// 3. PROVISION STORE API
+// ============================================================================
+export const getProvisionProducts = (branchId = 'BR001') =>
+  cachedGet(`/provision/products?branchId=${branchId}`);
+
+export const createProvisionProduct = (productData: any) =>
+  apiMutate('/provision/products', 'POST', productData);
+
+export const updateProvisionProduct = (id: string, productData: any) =>
+  apiMutate(`/provision/products/${id}`, 'PUT', productData);
+
+export const setProvisionProductStatus = (
+  id: string,
+  status: 'Active' | 'Inactive',
+) => apiMutate(`/provision/products/${id}/status`, 'PATCH', { status });
 
 export const processCheckout = async (checkoutData: any) => {
-  const response = await fetch(`${API_BASE}/provision/checkout`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(checkoutData),
-  });
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
+  try {
+    return await apiMutate('/provision/checkout', 'POST', checkoutData);
+  } catch (err: any) {
+    if (!navigator.onLine || err.message === 'Failed to fetch') {
+      const queued = addToOfflineOutbox(
+        '/provision/checkout',
+        'POST',
+        checkoutData,
+        `POS Sale ₦${Number(checkoutData?.payment?.totalAmount || 0).toLocaleString()}`,
+      );
+      return { invoiceNumber: queued.id, queuedOffline: true };
+    }
+    throw err;
+  }
 };
 
-export const getProvisionInventory = async (branchId: string) => {
-  const response = await fetch(
-    `${API_BASE}/provision/inventory?branchId=${branchId}`,
-  );
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const getProvisionInventory = (branchId = 'BR001') =>
+  cachedGet(`/provision/inventory?branchId=${branchId}`);
 
-export const recordPurchase = async (purchaseData: any) => {
-  const response = await fetch(`${API_BASE}/provision/purchases`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(purchaseData),
-  });
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const getProvisionPurchases = (branchId = 'BR001') =>
+  cachedGet(`/provision/purchases?branchId=${branchId}`);
 
-export const getProvisionPurchases = async (branchId: string) => {
-  const response = await fetch(
-    `${API_BASE}/provision/purchases?branchId=${branchId}`,
-  );
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const recordPurchase = (purchaseData: any) =>
+  apiMutate('/provision/purchases', 'POST', purchaseData);
 
-export const getProvisionCustomers = async (branchId: string) => {
-  const response = await fetch(
-    `${API_BASE}/provision/customers?branchId=${branchId}`,
-  );
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const getProvisionCustomers = (branchId = 'BR001') =>
+  cachedGet(`/provision/customers?branchId=${branchId}`);
 
-export const createProvisionCustomer = async (customerData: {
+export const createProvisionCustomer = (customerData: {
   branchId: string;
   name: string;
   phone: string;
-}) => {
-  const response = await fetch(`${API_BASE}/provision/customers`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(customerData),
-  });
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
+}) => apiMutate('/provision/customers', 'POST', customerData);
+
+export const getProvisionLedger = (branchId = 'BR001', customerId?: string) => {
+  let path = `/provision/ledger?branchId=${branchId}`;
+  if (customerId) path += `&customerId=${customerId}`;
+  return cachedGet(path);
 };
 
-export const getProvisionLedger = async (
-  branchId: string,
-  customerId?: string,
-) => {
-  let url = `${API_BASE}/provision/ledger?branchId=${branchId}`;
-  if (customerId) url += `&customerId=${customerId}`;
-  const response = await fetch(url);
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
-
-export const recordCustomerPayment = async (paymentData: {
+export const recordCustomerPayment = (paymentData: {
   branchId: string;
   customerId: string;
   amount: number;
   paymentMethod: string;
   employeeName: string;
-}) => {
-  const response = await fetch(`${API_BASE}/provision/customers/payment`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(paymentData),
-  });
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+}) => apiMutate('/provision/customers/payment', 'POST', paymentData);
 
-export const updateProvisionProduct = async (id: string, productData: any) => {
-  const response = await fetch(`${API_BASE}/provision/products/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(productData),
-  });
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const getProvisionExpenses = (branchId = 'BR001') =>
+  cachedGet(`/provision/expenses?branchId=${branchId}`);
 
-export const setProvisionProductStatus = async (
-  id: string,
-  status: 'Active' | 'Inactive',
-) => {
-  const response = await fetch(`${API_BASE}/provision/products/${id}/status`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status }),
-  });
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const createProvisionExpense = (expenseData: any) =>
+  apiMutate('/provision/expenses', 'POST', expenseData);
 
-export const getProvisionExpenses = async (branchId: string) => {
-  const response = await fetch(
-    `${API_BASE}/provision/expenses?branchId=${branchId}`,
-  );
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const deleteProvisionExpense = (id: string) =>
+  apiMutate(`/provision/expenses/${id}`, 'DELETE');
 
-export const createProvisionExpense = async (expenseData: any) => {
-  const response = await fetch(`${API_BASE}/provision/expenses`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(expenseData),
-  });
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const adjustProvisionStock = (adjustData: any) =>
+  apiMutate('/provision/stock-adjust', 'POST', adjustData);
 
-export const deleteProvisionExpense = async (id: string) => {
-  const response = await fetch(`${API_BASE}/provision/expenses/${id}`, {
-    method: 'DELETE',
-  });
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const getProvisionExpiryBatches = (branchId = 'BR001') =>
+  cachedGet(`/provision/expiry-batches?branchId=${branchId}`);
 
-export const adjustProvisionStock = async (adjustData: any) => {
-  const response = await fetch(`${API_BASE}/provision/stock-adjust`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(adjustData),
-  });
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const createProvisionExpiryBatch = (batchData: any) =>
+  apiMutate('/provision/expiry-batches', 'POST', batchData);
 
-export const getProvisionExpiryBatches = async (branchId: string) => {
-  const response = await fetch(
-    `${API_BASE}/provision/expiry-batches?branchId=${branchId}`,
-  );
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const deleteProvisionExpiryBatch = (id: string) =>
+  apiMutate(`/provision/expiry-batches/${id}`, 'DELETE');
 
-export const createProvisionExpiryBatch = async (batchData: any) => {
-  const response = await fetch(`${API_BASE}/provision/expiry-batches`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(batchData),
-  });
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const getProvisionDashboard = (branchId = 'BR001') =>
+  cachedGet(`/provision/dashboard?branchId=${branchId}`);
 
-export const deleteProvisionExpiryBatch = async (id: string) => {
-  const response = await fetch(`${API_BASE}/provision/expiry-batches/${id}`, {
-    method: 'DELETE',
-  });
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
-
-export const getProvisionDashboard = async (branchId: string) => {
-  const response = await fetch(
-    `${API_BASE}/provision/dashboard?branchId=${branchId}`,
-  );
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
-
-export const getProvisionReport = async (
+export const getProvisionReport = (
   branchId: string,
   startDate: string,
   endDate: string,
-) => {
-  const response = await fetch(
-    `${API_BASE}/provision/reports?branchId=${branchId}&startDate=${startDate}&endDate=${endDate}`,
+) =>
+  cachedGet(
+    `/provision/reports?branchId=${branchId}&startDate=${startDate}&endDate=${endDate}`,
   );
-  const data = await response.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
 
+export const getProvisionSalesHistory = (branchId = 'BR001') =>
+  cachedGet(`/provision/sales?branchId=${branchId}`);
 
-// ==========================================
-// POS AGENT BANKING API CALLS
-// ==========================================
+export const refundProvisionSale = (
+  saleId: string,
+  payload: {
+    branchId?: string;
+    productId: string;
+    productName: string;
+    quantityPieces: number;
+    refundAmount: number;
+    reason: string;
+    employeeName: string;
+  },
+) => apiMutate(`/provision/sales/${saleId}/refund`, 'POST', payload);
 
-export const getBankingSettings = async (branchId: string) => {
-  const res = await fetch(`${API_BASE}/banking/settings?branchId=${branchId}`);
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const getProvisionDrawer = (branchId = 'BR001') =>
+  cachedGet(`/provision/drawer?branchId=${branchId}`);
 
-export const updateBankingChargeDefault = async (branchId: string, transactionType: string, defaultCharge: number) => {
-  const res = await fetch(`${API_BASE}/banking/settings/charge`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ branchId, transactionType, defaultCharge }),
+export const openProvisionDrawer = (payload: {
+  branchId?: string;
+  openingCash: number;
+  employeeName: string;
+}) => apiMutate('/provision/drawer/open', 'POST', payload);
+
+export const closeProvisionDrawer = (payload: {
+  branchId?: string;
+  countedCash: number;
+  notes: string;
+  employeeName: string;
+}) => apiMutate('/provision/drawer/close', 'POST', payload);
+
+// ============================================================================
+// 4. POS AGENT BANKING API
+// ============================================================================
+export const getBankingSettings = (branchId = 'BR002') =>
+  cachedGet(`/banking/settings?branchId=${branchId}`);
+
+export const updateBankingChargeDefault = (
+  branchId: string,
+  transactionType: string,
+  defaultCharge: number,
+) =>
+  apiMutate('/banking/settings/charge', 'PUT', {
+    branchId,
+    transactionType,
+    defaultCharge,
   });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
 
-export const addBankingProvider = async (branchId: string, providerName: string) => {
-  const res = await fetch(`${API_BASE}/banking/settings/providers`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ branchId, providerName }),
-  });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const addBankingProvider = (branchId: string, providerName: string) =>
+  apiMutate('/banking/settings/providers', 'POST', { branchId, providerName });
 
-export const deleteBankingProvider = async (id: string) => {
-  const res = await fetch(`${API_BASE}/banking/settings/providers/${id}`, { method: 'DELETE' });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const deleteBankingProvider = (id: string) =>
+  apiMutate(`/banking/settings/providers/${id}`, 'DELETE');
 
-export const getBankingFloatData = async (branchId: string) => {
-  const res = await fetch(`${API_BASE}/banking/float?branchId=${branchId}`);
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const getBankingFloatData = (branchId = 'BR002') =>
+  cachedGet(`/banking/float?branchId=${branchId}`);
 
-export const openBankingDay = async (payload: { branchId: string; openingCash: number; openingFloat: number; employeeName: string }) => {
-  const res = await fetch(`${API_BASE}/banking/float/open`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const openBankingDay = (payload: {
+  branchId: string;
+  openingCash: number;
+  openingFloat: number;
+  employeeName: string;
+}) => apiMutate('/banking/float/open', 'POST', payload);
 
-export const closeBankingDay = async (payload: { branchId: string; countedCash: number; notes: string; employeeName: string }) => {
-  const res = await fetch(`${API_BASE}/banking/float/close`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const closeBankingDay = (payload: {
+  branchId: string;
+  countedCash: number;
+  notes: string;
+  employeeName: string;
+}) => apiMutate('/banking/float/close', 'POST', payload);
 
-export const reopenBankingDay = async (branchId: string) => {
-  const res = await fetch(`${API_BASE}/banking/float/reopen`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ branchId }),
-  });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const reopenBankingDay = (branchId: string) =>
+  apiMutate('/banking/float/reopen', 'POST', { branchId });
 
-export const getBankingTransactions = async (branchId: string, date?: string) => {
-  let url = `${API_BASE}/banking/transactions?branchId=${branchId}`;
-  if (date) url += `&date=${date}`;
-  const res = await fetch(url);
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
+export const getBankingTransactions = (branchId = 'BR002', date?: string) => {
+  let path = `/banking/transactions?branchId=${branchId}`;
+  if (date) path += `&date=${date}`;
+  return cachedGet(path);
 };
 
 export const createBankingTransaction = async (txData: any) => {
-  const res = await fetch(`${API_BASE}/banking/transactions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(txData),
+  try {
+    return await apiMutate('/banking/transactions', 'POST', txData);
+  } catch (err: any) {
+    if (!navigator.onLine || err.message === 'Failed to fetch') {
+      const queued = addToOfflineOutbox(
+        '/banking/transactions',
+        'POST',
+        txData,
+        `${txData.type} ₦${Number(txData.amount || 0).toLocaleString()}`,
+      );
+      return { id: queued.id, transactionCode: queued.id, queuedOffline: true };
+    }
+    throw err;
+  }
+};
+
+export const updateBankingTransactionStatus = (
+  id: string,
+  branchId: string,
+  status: string,
+  notes?: string,
+) =>
+  apiMutate(`/banking/transactions/${id}/status`, 'PATCH', {
+    branchId,
+    status,
+    notes,
   });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
 
-export const updateBankingTransactionStatus = async (id: string, branchId: string, status: string, notes?: string) => {
-  const res = await fetch(`${API_BASE}/banking/transactions/${id}/status`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ branchId, status, notes }),
-  });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const deleteBankingTransaction = (id: string) =>
+  apiMutate(`/banking/transactions/${id}`, 'DELETE');
 
-export const deleteBankingTransaction = async (id: string) => {
-  const res = await fetch(`${API_BASE}/banking/transactions/${id}`, { method: 'DELETE' });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const getBankingCustomers = (branchId = 'BR002') =>
+  cachedGet(`/banking/customers?branchId=${branchId}`);
 
-export const getBankingCustomers = async (branchId: string) => {
-  const res = await fetch(`${API_BASE}/banking/customers?branchId=${branchId}`);
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const getBankingExpenses = (branchId = 'BR002') =>
+  cachedGet(`/banking/expenses?branchId=${branchId}`);
 
-export const getBankingExpenses = async (branchId: string) => {
-  const res = await fetch(`${API_BASE}/banking/expenses?branchId=${branchId}`);
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const createBankingExpense = (expenseData: any) =>
+  apiMutate('/banking/expenses', 'POST', expenseData);
 
-export const createBankingExpense = async (expenseData: any) => {
-  const res = await fetch(`${API_BASE}/banking/expenses`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(expenseData),
-  });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const deleteBankingExpense = (id: string) =>
+  apiMutate(`/banking/expenses/${id}`, 'DELETE');
 
-export const deleteBankingExpense = async (id: string) => {
-  const res = await fetch(`${API_BASE}/banking/expenses/${id}`, { method: 'DELETE' });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+export const getBankingDashboard = (branchId = 'BR002') =>
+  cachedGet(`/banking/dashboard?branchId=${branchId}`);
 
-export const getBankingDashboard = async (branchId: string) => {
-  const res = await fetch(`${API_BASE}/banking/dashboard?branchId=${branchId}`);
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
-
-export const getBankingReport = async (branchId: string, startDate: string, endDate: string) => {
-  const res = await fetch(
-    `${API_BASE}/banking/reports?branchId=${branchId}&startDate=${startDate}&endDate=${endDate}`
+export const getBankingReport = (
+  branchId: string,
+  startDate: string,
+  endDate: string,
+) =>
+  cachedGet(
+    `/banking/reports?branchId=${branchId}&startDate=${startDate}&endDate=${endDate}`,
   );
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.data;
-};
+
+// ============================================================================
+// 5. LAUNDRY SERVICE API
+// ============================================================================
+export const getLaundrySettings = (branchId = 'BR003') =>
+  cachedGet(`/laundry/settings?branchId=${branchId}`);
+
+export const addLaundryItemType = (
+  branchId: string,
+  itemType: string,
+  defaultPrice: number,
+  employeeName?: string,
+) =>
+  apiMutate('/laundry/settings', 'POST', {
+    branchId,
+    itemType,
+    defaultPrice,
+    employeeName,
+  });
+
+export const updateLaundryItemPrice = (
+  id: string,
+  defaultPrice: number,
+  employeeName?: string,
+) =>
+  apiMutate(`/laundry/settings/${id}`, 'PUT', { defaultPrice, employeeName });
+
+export const deleteLaundryItemType = (id: string) =>
+  apiMutate(`/laundry/settings/${id}`, 'DELETE');
+
+export const getLaundryOrders = (branchId = 'BR003') =>
+  cachedGet(`/laundry/orders?branchId=${branchId}`);
+
+export const getLaundryOrderItems = (orderId: string) =>
+  cachedGet(`/laundry/orders/${orderId}/items`);
+
+export const createLaundryOrder = (orderData: any) =>
+  apiMutate('/laundry/orders', 'POST', orderData);
+
+export const updateLaundryOrderStatus = (
+  orderId: string,
+  status: string,
+  collectedBy?: string,
+  employeeName?: string,
+) =>
+  apiMutate(`/laundry/orders/${orderId}/status`, 'PATCH', {
+    status,
+    collectedBy,
+    employeeName,
+  });
+
+export const recordLaundryOrderPayment = (
+  orderId: string,
+  payload: {
+    branchId?: string;
+    amount: number;
+    paymentMethod: string;
+    employeeName?: string;
+  },
+) => apiMutate(`/laundry/orders/${orderId}/payment`, 'POST', payload);
+
+export const deleteLaundryOrder = (orderId: string) =>
+  apiMutate(`/laundry/orders/${orderId}`, 'DELETE');
+
+export const getLaundryCustomers = (branchId = 'BR003') =>
+  cachedGet(`/laundry/customers?branchId=${branchId}`);
+
+export const createLaundryCustomer = (payload: {
+  branchId?: string;
+  name: string;
+  phone: string;
+}) => apiMutate('/laundry/customers', 'POST', payload);
+
+export const getLaundryLedger = (branchId = 'BR003') =>
+  cachedGet(`/laundry/ledger?branchId=${branchId}`);
+
+export const getLaundryExpenses = (branchId = 'BR003') =>
+  cachedGet(`/laundry/expenses?branchId=${branchId}`);
+
+export const createLaundryExpense = (payload: any) =>
+  apiMutate('/laundry/expenses', 'POST', payload);
+
+export const deleteLaundryExpense = (id: string) =>
+  apiMutate(`/laundry/expenses/${id}`, 'DELETE');
+
+export const getLaundryDashboard = (branchId = 'BR003') =>
+  cachedGet(`/laundry/dashboard?branchId=${branchId}`);
+
+export const getLaundryReport = (
+  branchId: string,
+  startDate: string,
+  endDate: string,
+) =>
+  cachedGet(
+    `/laundry/reports?branchId=${branchId}&startDate=${startDate}&endDate=${endDate}`,
+  );

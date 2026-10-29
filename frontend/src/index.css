@@ -1,3 +1,45 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+    html.dark body {
+        background-color: #09090B;
+        color: #F8FAFC;
+    }
+
+    /* High-contrast Obsidian card & surface overrides in Dark Mode */
+    html.dark .bg-white {
+        background-color: #111318 !important;
+        border-color: #1E293B !important;
+    }
+    html.dark .bg-gray-50,
+    html.dark .bg-gray-50\/50,
+    html.dark .bg-slate-50 {
+        background-color: #0C0E12 !important;
+        border-color: #1E293B !important;
+    }
+    html.dark .text-gray-900,
+    html.dark .text-gray-800,
+    html.dark .text-slate-900 {
+        color: #F8FAFC !important;
+    }
+    html.dark .text-gray-600,
+    html.dark .text-gray-700,
+    html.dark .text-gray-500 {
+        color: #94A3B8 !important;
+    }
+    html.dark .border-gray-100,
+    html.dark .border-gray-200,
+    html.dark .border-gray-300,
+    html.dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]) {
+        border-color: #1E293B !important;
+    }
+    html.dark input,
+    html.dark select,
+    html.dark textarea {
+        background-color: #09090B !important;
+        color: #F8FAFC !important;
+        border-color: #27272A !important;
+    }
+}
