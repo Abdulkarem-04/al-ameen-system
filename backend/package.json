@@ -1,20 +1,25 @@
 {
-  "name": "backend",
-  "type": "module",
+  "name": "amanahq-api",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy --minify",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
-    "db:schema": "wrangler d1 execute al_ameen_db --local --file=./schema.sql",
-    "db:seed": "wrangler d1 execute al_ameen_db --local --file=./seed.sql",
-    "db:clean": "wrangler d1 execute al_ameen_db --local --file=./clean.sql",
+    "db:schema": "wrangler d1 execute amanahq_db --local --file=./schema.sql",
+    "db:seed": "wrangler d1 execute amanahq_db --local --file=./seed.sql",
+    "db:clean": "wrangler d1 execute amanahq_db --local --file=./clean.sql",
     "db:reset": "npm run db:schema && npm run db:seed",
-    "db:fresh": "npm run db:schema && npm run db:clean"
+    "db:fresh": "npm run db:schema && npm run db:clean",
+    "db:remote:schema": "wrangler d1 execute amanahq_db --remote --file=./schema.sql",
+    "db:remote:clean": "wrangler d1 execute amanahq_db --remote --file=./clean.sql",
+    "db:remote:seed": "wrangler d1 execute amanahq_db --remote --file=./seed.sql",
+    "db:remote:fresh": "npm run db:remote:schema && npm run db:remote:clean",
+    "db:remote:reset": "npm run db:remote:schema && npm run db:remote:seed"
   },
   "dependencies": {
-    "hono": "^4.13.13"
+    "hono": "^4.12.14"
   },
   "devDependencies": {
-    "wrangler": "^4.110.0"
+    "@cloudflare/workers-types": "^4.20260415.1",
+    "wrangler": "^4.83.0"
   }
 }
