@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy": "VITE_API_URL=https://amanahq-api.amanahq.workers.dev/api vite build && wrangler pages deploy dist --project-name amanahq --branch main --commit-dirty=true"
   },
+  -
   "dependencies": {
     "lucide-react": "^1.57.0",
     "react": "^19.2.8",
